@@ -1,4 +1,5 @@
-# Daily backup of the whole database: both tools (sign-up classes, logs, undo snapshots; attendance classes, marks, answers).
+# Daily backup of the whole database: sign-up classes, logs, undo snapshots (and the old attendance tables, unused
+# since the attendance tool got its own database on 2026-10-05; its backup is in the attendance repository).
 # Writes a full SQL dump to backups\group-signup\ in the tools folder that contains this repository
 # (F:\GDriveMay\Maysam\01_online_tools\backups\group-signup), which lives in Google Drive and is never committed.
 # Restore one with:  npx wrangler d1 execute group-signup --remote --file "<that folder>\<file>.sql"
