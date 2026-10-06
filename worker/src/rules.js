@@ -234,6 +234,21 @@ const ACTIONS = {
 
 /** Fills in fields added after a class was created, so older stored states read like new ones. */
 export function upgrade(s) {
+  // Rows imported before canonEmail existed may hold @mail.montclair.edu; every lookup folds the address,
+  // so such rows could not be found (not removable, no sign-in). Fold the stored addresses once; of two rows
+  // that become the same address, the one in a group (else the first) is kept.
+  const fold = e => (typeof e === 'string' && /@mail\.montclair\.edu$/i.test(e) ? canonEmail(e) : e);
+  if (s.roster.some(r => fold(r.email) !== r.email)) {
+    const keep = {};
+    s.roster.forEach(r => {
+      r.email = fold(r.email);
+      const prev = keep[r.email];
+      if (!prev || (!prev.group && r.group)) keep[r.email] = r;
+    });
+    s.roster = s.roster.filter(r => keep[r.email] === r);
+    s.groups.forEach(g => { g.leader = fold(g.leader); });
+    (s.requests || []).forEach(q => { q.email = fold(q.email); });
+  }
   s.groups.forEach(g => {
     ['dataset', 'topic'].forEach(k => {
       if (g[k + 'By'] === undefined) g[k + 'By'] = g[k] ? 'group' : '';

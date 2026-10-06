@@ -1,6 +1,6 @@
 // Tests the sign-up rules (worker/src/rules.js) on an in-memory class.
 // Run from the repository root:  node test/test_rules.mjs
-import { act, view, adminAct, newClass } from '../worker/src/rules.js';
+import { act, view, adminAct, newClass, upgrade } from '../worker/src/rules.js';
 import { SEED_DATASETS, SEED_TOPICS } from '../worker/src/seed.js';
 
 const PROF = 'prof@gmail.com';
@@ -200,6 +200,16 @@ ok(S.roster.length === 3 && S.roster[0].first === 'Elian' && S.roster[0].last ==
   'Canvas roster: names split, login IDs become montclair.edu addresses, test student and Points Possible skipped: ' + JSON.stringify(S.roster.map(r => r.email)));
 ok(view(S, 'KhanJ6@mail.montclair.edu', '', false, Date.now()).authorized && view(S, 'khanj6@montclair.edu', '', false, Date.now()).authorized,
   'sign-in at either Montclair domain matches the roster');
+
+// Rows stored with @mail.montclair.edu (imported before addresses were folded) are folded on read, so they can be removed.
+S.roster.push({ first: 'George', last: 'Mad', email: 'madg@mail.montclair.edu', group: '', joinedAt: '' },
+  { first: 'Jane', last: 'Doe', email: 'jane@mail.montclair.edu', group: '', joinedAt: '' });
+S = upgrade(S);
+ok(S.roster.length === 4 && S.roster.some(r => r.email === 'madg@montclair.edu') && !S.roster.some(r => /@mail\./.test(r.email)),
+  'legacy @mail rows folded; a row that duplicates an existing address is dropped');
+ok(view(S, 'madg@mail.montclair.edu', '', false, Date.now()).authorized, 'a folded legacy row can sign in');
+adm('removeStudent', 'madg@mail.montclair.edu');
+ok(S.roster.length === 3 && !S.roster.some(r => r.email === 'madg@montclair.edu'), 'a legacy @mail row can be removed');
 throws(() => adm('importRoster', 'Name,ID\nx,y'), /header row/, 'unknown roster layout refused');
 throws(() => adm('importRoster', 'Student,SIS Login ID\n"    Points Possible",\n"Student, Test",843b2ebf97d6dff55e1ba2ce8c7910f987d72b05'), /no student rows/, 'Canvas file with only the test student refused');
 
