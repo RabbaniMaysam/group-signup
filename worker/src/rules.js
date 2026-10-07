@@ -405,6 +405,19 @@ export function parseRoster(csv) {
   return out;
 }
 
+/**
+ * What importing the CSV would change, without changing anything: the file's student count, how many of them are on
+ * the roster, the new students, and the students on the roster but not in the file (whom the instructor keeps or drops).
+ */
+export function previewRoster(roster, csv) {
+  const file = parseRoster(csv), seen = {}, on = {};
+  file.forEach(st => { seen[st.email] = true; });
+  roster.forEach(r => { on[r.email] = true; });
+  const pick = r => ({ first: r.first, last: r.last, email: r.email });
+  return { file: file.length, matched: file.filter(st => on[st.email]).length,
+           added: file.filter(st => !on[st.email]).map(pick), missing: roster.filter(r => !seen[r.email]).map(pick) };
+}
+
 function dropStudent(c, st) {
   detach(c.s, st, c.now, c.log);
   closeRequests(c.s, q => q.email === st.email, 'cancelled', c.now);
@@ -425,21 +438,28 @@ const ADMIN = {
     c.log('save settings', JSON.stringify(c.s.settings));
   },
 
-  /** Replaces the roster with the CSV (layouts: see parseRoster). Students who remain keep their group. */
-  importRoster(c, csv) {
-    const seen = {};
+  /**
+   * Imports the CSV (layouts: see parseRoster). The file's students make up the roster and those already on it keep
+   * their group. keep: emails of students on the roster but not in the file who stay (unchanged); the others are
+   * dropped. Without keep (an older page), every student not in the file is dropped.
+   */
+  importRoster(c, csv, keep) {
+    const seen = {}, stay = {};
     const out = parseRoster(csv).map(st => {
       seen[st.email] = true;
       const prev = student(c.s, st.email);
       return { first: st.first, last: st.last, email: st.email,
                group: prev ? prev.group : '', joinedAt: prev ? prev.joinedAt : '' };
     });
-    const dropped = c.s.roster.filter(r => !seen[r.email]);
+    (Array.isArray(keep) ? keep : []).forEach(e => { stay[canonEmail(e)] = true; });
+    const kept = c.s.roster.filter(r => !seen[r.email] && stay[r.email]);
+    const dropped = c.s.roster.filter(r => !seen[r.email] && !stay[r.email]);
     dropped.forEach(st => dropStudent(c, st));
     // A dropped leader may have been replaced above, so group fields are read again.
     out.forEach(r => { const prev = student(c.s, r.email); if (prev) { r.group = prev.group; r.joinedAt = prev.joinedAt; } });
-    c.s.roster = out;
-    c.log('import roster', out.length + ' students, ' + dropped.length + ' removed');
+    c.s.roster = out.concat(kept.map(r => student(c.s, r.email)));
+    c.log('import roster', out.length + ' students in the file; kept: ' + (kept.map(r => r.email).join(', ') || 'none')
+      + '; removed: ' + (dropped.map(r => r.email).join(', ') || 'none'));
   },
 
   addStudent(c, first, last, email) {

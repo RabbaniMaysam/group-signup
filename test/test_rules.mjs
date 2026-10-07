@@ -1,6 +1,6 @@
 // Tests the sign-up rules (worker/src/rules.js) on an in-memory class.
 // Run from the repository root:  node test/test_rules.mjs
-import { act, view, adminAct, newClass, upgrade } from '../worker/src/rules.js';
+import { act, view, adminAct, newClass, upgrade, previewRoster } from '../worker/src/rules.js';
 import { SEED_DATASETS, SEED_TOPICS } from '../worker/src/seed.js';
 
 const PROF = 'prof@gmail.com';
@@ -184,6 +184,25 @@ ok(grp('Group 1').leader === 'a@x.edu' && state('b').authorized === false, 'remo
 adm('importRoster', 'first,last,email\nFc,Lc,c@x.edu\nFd,Ld,d@x.edu\nFe,Le,e@x.edu\nNew,Student,n@x.edu');
 ok(S.roster.length === 4 && !grp('Group 1') && !grp('Group 3') && state('d').me.group === 'Group 2' && state('e').me.request === 'Group 2',
   're-import: dropped students leave, emptied groups are deleted, the others keep their group and requests');
+
+// Import with a choice: a preview lists the students not in the file; the ones the instructor keeps stay with their group.
+{
+  const saved = S;
+  S = newClass('Keep test', SEED_DATASETS, SEED_TOPICS);
+  adm('importRoster', 'first,last,email\nFa,La,a@x.edu\nFb,Lb,b@x.edu\nFc,Lc,c@x.edu');
+  adm('moveStudent', 'b@x.edu', 'new');
+  const csv2 = 'first,last,email\nFa,La,A@x.edu\nFd,Ld,d@x.edu';
+  const p = previewRoster(S.roster, csv2);
+  ok(p.file === 2 && p.matched === 1 && p.added.map(r => r.email).join() === 'd@x.edu' && p.missing.map(r => r.email).join() === 'b@x.edu,c@x.edu'
+    && S.roster.length === 3, 'preview: file count, matched, new, and missing students; nothing changes');
+  const bGroup = S.roster.find(r => r.email === 'b@x.edu').group;
+  adm('importRoster', csv2, ['B@x.edu']);
+  ok(S.roster.map(r => r.email).join() === 'a@x.edu,d@x.edu,b@x.edu' && bGroup && S.roster.find(r => r.email === 'b@x.edu').group === bGroup
+    && /kept: b@x.edu; removed: c@x.edu/.test(logs[logs.length - 1].detail), 'a kept student stays with the group, an unchecked one is dropped, both logged');
+  adm('importRoster', csv2);
+  ok(S.roster.map(r => r.email).join() === 'a@x.edu,d@x.edu', 'without a keep list (older page) every student not in the file is dropped');
+  S = saved;
+}
 throws(() => adm('removeTopic', '7'), /claimed by Group 2/, 'claimed topic cannot be removed');
 adm('saveTopic', { code: '30', topic: 'New topic', description: 'x' });
 adm('saveDataset', { code: '1', name: 'Diabetes (renamed)', link: '', own: false, reserved: '' });

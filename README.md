@@ -29,6 +29,7 @@ Only the accounts in the Worker's `ADMIN_EMAILS` secret can use it. Neither the 
 | Tab | Tasks |
 |---|---|
 | Overview | Student link, title, deadline, limits, downloads of the groups and the full log, delete the class |
+| QR code | The student link as a QR code with the live status; "Open in a new tab" opens it full screen (`admin.html?qr=KEY`) for the projector |
 | Roster | Import the roster (see Roster files), add or remove one student, move a student to a group |
 | Groups | Change the leader, assign or release a dataset or topic, delete a group |
 | Datasets, Topics | Add, edit, or remove catalog items |
@@ -39,6 +40,8 @@ On the student page, an instructor account sees the whole board and can preview 
 ## Roster files
 
 The import (`parseRoster` in `worker/src/rules.js`) reads the Canvas gradebook export, with a "Student" column ("Last, First") and a "SIS Login ID" column (the address before the @, completed with `@montclair.edu`; the "Points Possible" row and Canvas's test student are skipped), or a CSV with first name, last name, and email columns in any order. Addresses are lowercased, and `@mail.montclair.edu` is stored as `@montclair.edu`; a student may sign in with either form. The domain rule is the one line `canonEmail` in `rules.js`.
+
+Importing does not replace the roster outright: a dialog (from `previewRoster`) lists the new students and the students on the roster but missing from the file, each with a checkbox, checked (kept) by default. Kept students stay with their group; dropped students leave the class and their group. Students in the file keep their group.
 
 ## Several classes
 

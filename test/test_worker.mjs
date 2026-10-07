@@ -67,6 +67,12 @@ ok((await (await fetch(API + '/config')).json()).classes.some(c => c.key === KEY
 const N = 30;
 r = await adm('importRoster', ['first,last,email\n' + Array.from({ length: N }, (_, i) => `F${i},L${i},${m(i)}`).join('\n')]);
 ok(r.ok && r.data.state.roster.length === N, 'roster import');
+const csv29 = 'first,last,email\n' + Array.from({ length: N - 1 }, (_, i) => `F${i},L${i},${m(i)}`).join('\n');
+r = await adm('previewRoster', [csv29]);
+ok(r.ok && r.data.file === N - 1 && r.data.matched === N - 1 && r.data.added.length === 0 && r.data.missing.map(x => x.email).join() === m(N - 1)
+  && (await adm('get')).data.state.roster.length === N, 'roster preview lists the student not in the file and changes nothing');
+r = await adm('importRoster', [csv29, [m(N - 1)]]);
+ok(r.ok && r.data.state.roster.length === N && r.data.state.roster.some(x => x.email === m(N - 1)), 'import keeps the student the instructor chose to keep');
 ok((await stu(99, 'state')).state.authorized === false, 'account outside the roster is blocked');
 
 // session tokens: issued after a Google sign-in, accepted afterwards, forgeries refused

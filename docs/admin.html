@@ -57,6 +57,12 @@
     .modal p { margin: 0 0 8px; }
     .modal .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     button.danger.solid { background: var(--warn); color: #fff; }
+    .qrveil { background: #fff; flex-direction: column; text-align: center; }
+    .qrveil h1 { font-size: 34px; margin: 0 0 12px; }
+    .qr { width: min(70vh, 90vw); height: min(70vh, 90vw); }
+    .qr svg { width: 100%; height: 100%; display: block; }
+    .qrurl { font-size: 26px; margin: 14px 0 4px; word-break: break-all; }
+    .qrstatus { font-size: 22px; margin: 0 0 6px; color: var(--ok); }
   </style>
 </head>
 <body>
@@ -68,11 +74,13 @@
   var API = (window.SIGNUP_API || '').replace(/\/+$/, '');
   var TOKEN_KEY = 'signup_token';
   var TZ = 'America/New_York';
-  var TABS = ['Overview', 'Roster', 'Groups', 'Datasets', 'Topics', 'Log', 'History'];
+  var TABS = ['Overview', 'QR code', 'Roster', 'Groups', 'Datasets', 'Topics', 'Log', 'History'];
   var token = '', me = '', classes = [], cur = '', C = null, tab = 'Overview';
   var flash = null, busy = false, logRows = null, logSearch = '', snapRows = null;
+  // admin.html?qr=KEY is the QR screen of that class in its own tab (for the projector); see qrPage.
+  var qrMode = new URLSearchParams(location.search).get('qr') || '';
   // The token is kept in localStorage: the Worker's session token (sent after a Google sign-in) lasts months. "Sign out" deletes it.
-  try { token = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; cur = sessionStorage.getItem('signup_admin_class') || ''; } catch (e) {}
+  try { token = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; cur = qrMode || sessionStorage.getItem('signup_admin_class') || ''; } catch (e) {}
 
   // ---------------------------------------------------------------- plumbing
 
@@ -279,6 +287,62 @@
     return choose(title, lines, [{ label: okLabel, value: true, cls: danger ? 'danger solid' : '' }]).then(function (v) { return v === true; });
   }
 
+  /**
+   * The roster import dialog. p is the Worker's previewRoster answer: the file's student count, how many are on the
+   * roster, the new students, and the students on the roster but not in the file, each listed with a checkbox
+   * (checked keeps the student, unchecked drops). Resolves the emails to keep, or null on Cancel, Esc, or a click outside.
+   */
+  function importChoice(p, dropNote) {
+    return new Promise(function (resolve) {
+      var veil;
+      var done = function (v) { veil.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+      var onKey = function (ev) { if (ev.key === 'Escape') done(null); };
+      var nm = function (r) { return (r.first + ' ' + r.last).trim() || r.email; };
+      var box = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', style: 'max-width:560px' }, el('h2', { text: 'Import the roster' }));
+      box.appendChild(el('p', { text: 'The file has ' + p.file + ' student' + (p.file === 1 ? '' : 's') + ': ' + p.matched + ' on the roster now, ' + p.added.length + ' new.' }));
+      if (p.added.length) box.appendChild(el('p', { class: 'muted', text: 'New: ' + p.added.map(nm).join(', ') + '.' }));
+      var go = el('button', { text: 'Import' });
+      var boxes = p.missing.map(function (r) {
+        var cb = el('input', { type: 'checkbox', on: { change: function () { label(); } } }); cb.checked = true;
+        return { r: r, cb: cb };
+      });
+      var label = function () {
+        var n = boxes.filter(function (b) { return !b.cb.checked; }).length;
+        go.textContent = n ? 'Import and drop ' + n : 'Import';
+        go.className = n ? 'danger solid' : '';
+      };
+      if (boxes.length) {
+        box.appendChild(el('p', {}, el('b', { text: boxes.length + (boxes.length === 1 ? ' student on the roster is' : ' students on the roster are') + ' not in the file.' }),
+          ' Checked students stay on the roster; unchecked students are dropped. ' + dropNote));
+        var all = function (v) { return function () { boxes.forEach(function (b) { b.cb.checked = v; }); label(); }; };
+        box.appendChild(el('div', { style: 'display:flex; gap:8px; margin-bottom:6px' },
+          el('button', { class: 'plain', text: 'Keep all', on: { click: all(true) } }), el('button', { class: 'plain', text: 'Drop all', on: { click: all(false) } })));
+        var list = el('div', { style: 'max-height:40vh; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px 10px' });
+        boxes.forEach(function (b) { list.appendChild(el('label', { style: 'display:block; padding:2px 0' }, b.cb, ' ' + nm(b.r) + ' ', el('span', { class: 'muted', text: b.r.email }))); });
+        box.appendChild(list);
+      } else box.appendChild(el('p', { text: 'Every student on the roster is in the file.' }));
+      go.addEventListener('click', function () { done(boxes.filter(function (b) { return b.cb.checked; }).map(function (b) { return b.r.email; })); });
+      box.appendChild(el('div', { class: 'buttons' }, el('button', { class: 'plain', text: 'Cancel', on: { click: function () { done(null); } } }), go));
+      veil = el('div', { class: 'veil', on: { click: function (ev) { if (ev.target === veil) done(null); } } }, box);
+      document.body.appendChild(veil);
+      document.addEventListener('keydown', onKey);
+      go.focus();
+    });
+  }
+
+  /** Reads the chosen roster file, shows what it changes (importChoice), and imports it with the students to keep. */
+  function importRoster(file, dropNote) {
+    if (!file.files.length) { flash = { err: 'Choose a CSV file first.' }; render(); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var csv = String(reader.result);
+      call('previewRoster', [csv]).then(function (p) {
+        return importChoice(p, dropNote).then(function (keep) { if (keep) run('importRoster', [csv, keep], 'Roster imported.'); });
+      }).catch(fail);
+    };
+    reader.readAsText(file.files[0]);
+  }
+
   // Unsaved edits of the Overview settings: kept in settingsDraft across redraws, and checked before the tab or class changes.
   var settingsDraft = null;
   function settingsOf(s) {
@@ -317,15 +381,77 @@
     return code === g[field] && claimBy(g, field) === 'instructor' ? 'forced' : '';
   }
 
+  // ---------------------------------------------------------------- QR code
+
+  /** Calls fn once the QR code library (loaded from a CDN on first use) is loaded. */
+  function withQr(fn) {
+    if (window.qrcode) { fn(); return; }
+    document.head.appendChild(el('script', { src: 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js',
+      on: { load: fn, error: function () { flash = { err: 'The QR code library could not be loaded. Check the internet connection.' }; render(); } } }));
+  }
+  function qrPicture() {
+    var qr = window.qrcode(0, 'M');
+    qr.addData(studentLink()); qr.make();
+    var pic = el('div', { class: 'qr' }); pic.innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+    return pic;
+  }
+
+  /** "18 of 40 students are in a group · 6 groups · sign-up closes Oct 20, 5:00 PM". */
+  function statusText() {
+    var inGroup = C.roster.filter(function (r) { return r.group; }).length;
+    var d = C.settings.deadline;
+    return inGroup + ' of ' + C.roster.length + ' students are in a group · ' + C.groups.length + ' group' + (C.groups.length === 1 ? '' : 's')
+      + (d ? ' · sign-up ' + (Date.parse(d) > Date.now() ? 'closes ' : 'closed ')
+        + new Date(d).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+  }
+
+  /** Opens the QR screen of the current class in a new tab (admin.html?qr=KEY), to be dragged to the projector, while this tab keeps the controls. */
+  function showQr() { window.open(location.pathname + '?qr=' + encodeURIComponent(cur), '_blank'); }
+
+  /** The QR tab's page: the QR code of the student link and the live status. Drawn once; the status refreshes every 10 seconds. */
+  function qrPage() {
+    var app = document.getElementById('app');
+    if (document.querySelector('.qrveil')) return;
+    app.innerHTML = '';
+    document.getElementById('signin').hidden = true;
+    if (flash && flash.err) app.appendChild(el('div', { class: 'banner err', text: flash.err }));
+    if (!C) { app.appendChild(el('p', { class: 'muted', text: 'Loading...' })); return; }
+    document.title = C.settings.title + ': QR code';
+    withQr(function () {
+      var status = el('p', { class: 'qrstatus', text: statusText() });
+      setInterval(function () {
+        if (!document.hidden) call('get').then(function (d) { C = d.state; status.textContent = statusText(); }).catch(function () {});
+      }, 10000);
+      document.body.appendChild(el('div', { class: 'veil qrveil' },
+        el('h1', { text: C.settings.title }), qrPicture(), el('p', { class: 'qrurl', text: studentLink() }), status,
+        el('p', { class: 'muted', text: 'Press F11 for full screen. Close this tab to leave.' })));
+    });
+  }
+
+  // ---- QR code tab: the code on the page, with the live status and a button for the projector
+  function qrTab(card) {
+    card.appendChild(el('div', { class: 'banner ok', style: 'margin-top:0', text: statusText() }));
+    card.appendChild(el('div', { class: 'row', style: 'margin-top:12px' }, button('Open in a new tab', '', showQr),
+      el('span', { class: 'muted', text: 'Opens a tab with the QR code, the link, and the live status: drag it to the projector screen (F11 for full screen) and keep this tab on your monitor.' })));
+    var holder = el('div', { style: 'text-align:center; margin-top:8px' });
+    card.appendChild(holder);
+    withQr(function () {
+      var pic = qrPicture(); pic.style.cssText = 'width:min(50vh, 90%); height:auto; margin:0 auto';
+      holder.appendChild(pic);
+      holder.appendChild(el('p', { class: 'qrurl', style: 'font-size:18px', text: studentLink() }));
+    });
+  }
+
   // ---------------------------------------------------------------- rendering
 
   function render() {
+    if (qrMode) { qrPage(); return; }  // the page opened by "Open in a new tab" on the QR code tab
     var app = document.getElementById('app');
     var keepScroll = window.scrollY;
     app.innerHTML = '';
     document.getElementById('signin').hidden = true;
     app.appendChild(el('h1', { text: 'Group sign-up: instructor page' }));
-    app.appendChild(el('div', { class: 'muted' }, 'Signed in as ' + me + ' · ',
+    app.appendChild(el('div', { class: 'muted' },
       el('button', { class: 'link', text: 'Sign out', on: { click: signOut } }), ' · ',
       el('a', { href: 'https://rabbanimaysam.github.io/attendance/attendance_admin.html', text: 'Attendance instructor page' })));
     if (flash && flash.err) app.appendChild(el('div', { class: 'banner err', text: flash.err }));
@@ -367,7 +493,7 @@
     });
     app.appendChild(tabs);
     var card = el('div', { class: 'card' });
-    ({ Overview: overview, Roster: roster, Groups: groups, Datasets: datasets, Topics: topics, Log: log, History: history })[tab](card);
+    ({ Overview: overview, 'QR code': qrTab, Roster: roster, Groups: groups, Datasets: datasets, Topics: topics, Log: log, History: history })[tab](card);
     app.appendChild(card);
     window.scrollTo(0, keepScroll);
   }
@@ -389,7 +515,8 @@
     var link = studentLink();
     card.appendChild(el('h2', { text: 'Settings' }));
     card.appendChild(el('dl', {},
-      el('dt', { text: 'Student link' }), el('dd', {}, el('a', { href: link, target: '_blank', rel: 'noopener', text: link })),
+      el('dt', { text: 'Student link' }), el('dd', {}, el('a', { href: link, target: '_blank', rel: 'noopener', text: link }), ' · ',
+        el('button', { class: 'link', text: 'Open the QR code in a new tab', on: { click: showQr } })),
       el('dt', { text: 'Course title' }), el('dd', {}, f.title),
       el('dt', { text: 'Deadline' }), el('dd', {}, f.deadline, el('span', { class: 'muted', text: ' in this computer\'s time zone. Empty = no deadline. Students cannot change anything afterward.' })),
       el('dt', { text: 'Maximum group size' }), el('dd', {}, f.maxSize, el('span', { class: 'muted', text: ' the group creator plus the students the creator approves' })),
@@ -444,13 +571,7 @@
     card.appendChild(el('h2', { text: 'Roster (' + C.roster.length + ')' }));
     var file = el('input', { type: 'file', accept: '.csv,text/csv' });
     card.appendChild(el('div', { class: 'row' }, el('span', { text: 'Import the Canvas gradebook export, or a CSV with first name, last name, and email columns:' }), file,
-      button('Import', '', function () {
-        if (!file.files.length) { flash = { err: 'Choose a CSV file first.' }; render(); return; }
-        if (C.roster.length && !confirm('The file replaces the roster. Students in the file keep their group. Students missing from the file are removed from the class and from their group. Continue?')) return;
-        var reader = new FileReader();
-        reader.onload = function () { run('importRoster', [String(reader.result)], 'Roster imported.'); };
-        reader.readAsText(file.files[0]);
-      })));
+      button('Import', '', function () { importRoster(file, 'A dropped student leaves the class and their group. Students in the file keep their group.'); })));
     var a = { first: el('input', { type: 'text', placeholder: 'First name', size: 14 }), last: el('input', { type: 'text', placeholder: 'Last name', size: 14 }),
               email: el('input', { type: 'text', placeholder: 'Email', size: 26 }) };
     card.appendChild(el('div', { class: 'row' }, el('span', { text: 'Add one student:' }), a.first, a.last, a.email,

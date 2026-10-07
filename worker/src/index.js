@@ -16,7 +16,7 @@
  * second is recomputed against the first one's result and refused.
  */
 
-import { act, view, adminAct, isAdminAction, newClass, upgrade, canonEmail } from './rules.js';
+import { act, view, adminAct, isAdminAction, newClass, upgrade, canonEmail, previewRoster } from './rules.js';
 import { SEED_DATASETS, SEED_TOPICS } from './seed.js';
 
 const CORS = {
@@ -276,6 +276,9 @@ async function adminCall(env, real, action, key, args) {
   }
 
   if (action === 'get') return await readClass(env, key);
+
+  // What importing a roster file would change; nothing is saved (the page then sends importRoster with the students to keep).
+  if (action === 'previewRoster') return previewRoster((await readClass(env, key)).state.roster, args[0]);
 
   // Every change saved a snapshot of the state before it. Newest first.
   if (action === 'snapshots') {
