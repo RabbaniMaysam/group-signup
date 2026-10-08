@@ -478,6 +478,16 @@ const ADMIN = {
     c.log('remove student', st.email);
   },
 
+  /** Removes several students at once. Every email must be on the roster (duplicates count once); one log line. */
+  removeStudents(c, emails) {
+    const seen = {};
+    const list = (Array.isArray(emails) ? emails : []).map(e => canonEmail(e)).filter(e => !seen[e] && (seen[e] = true));
+    if (!list.length) throw new Error('No student is selected.');
+    const sts = list.map(e => { const st = student(c.s, e); if (!st) throw new Error(e + ' is not on the roster.'); return st; });
+    sts.forEach(st => { dropStudent(c, st); c.s.roster.splice(c.s.roster.indexOf(st), 1); });
+    c.log('remove students', sts.length + ' students: ' + sts.map(st => st.email).join(', '));
+  },
+
   /** target: '' = no group, 'new' = a new group led by the student, or a group name. Size limits do not bind the instructor. */
   moveStudent(c, email, target) {
     const st = student(c.s, email);

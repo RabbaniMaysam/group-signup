@@ -264,6 +264,15 @@ async function adminCall(env, real, action, key, args) {
     return { key: newKey, classes: await classList(env) };
   }
 
+  // What deleting the class would remove; the page shows it before asking for the key.
+  if (action === 'deleteInfo') {
+    const s = (await readClass(env, key)).state;
+    const count = async t => (await env.DB.prepare('SELECT COUNT(*) AS n FROM ' + t + ' WHERE class = ?').bind(key).first()).n;
+    return { title: s.settings.title, roster: s.roster.length, inGroup: s.roster.filter(r => r.group).length, groups: s.groups.length,
+             withDataset: s.groups.filter(g => g.dataset !== '').length, withTopic: s.groups.filter(g => g.topic !== '').length,
+             pending: s.requests.filter(q => q.status === 'pending').length, log: await count('log'), snapshots: await count('snapshots') };
+  }
+
   if (action === 'deleteClass') {
     if (String(args[0]) !== key) throw new Error('Type the class key exactly to delete the class.');
     await readClass(env, key);

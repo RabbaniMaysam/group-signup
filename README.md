@@ -28,9 +28,9 @@ Only the accounts in the Worker's `ADMIN_EMAILS` secret can use it. Neither the 
 
 | Tab | Tasks |
 |---|---|
-| Overview | Student link, title, deadline, limits, downloads of the groups and the full log, delete the class |
+| Overview | Student link, title, deadline, limits, downloads of the groups and the full log, delete the class (two confirmations: the first lists what the class holds, from `deleteInfo`; the second needs the class key typed) |
 | QR code | The student link as a QR code with the live status; "Open in a new tab" opens it full screen (`admin.html?qr=KEY`) for the projector |
-| Roster | Import the roster (see Roster files), add or remove one student, move a student to a group |
+| Roster | Import the roster (see Roster files), add or remove one student, remove several at once (checkboxes with "Select all" and "Select none", then "Remove selected"; `removeStudents`), move a student to a group |
 | Groups | Change the leader, assign or release a dataset or topic, delete a group |
 | Datasets, Topics | Add, edit, or remove catalog items |
 | Log | Every sign-in, action, and refused attempt with its reason, time, and account |

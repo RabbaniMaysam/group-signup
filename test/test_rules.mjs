@@ -229,6 +229,17 @@ ok(S.roster.length === 4 && S.roster.some(r => r.email === 'madg@montclair.edu')
 ok(view(S, 'madg@mail.montclair.edu', '', false, Date.now()).authorized, 'a folded legacy row can sign in');
 adm('removeStudent', 'madg@mail.montclair.edu');
 ok(S.roster.length === 3 && !S.roster.some(r => r.email === 'madg@montclair.edu'), 'a legacy @mail row can be removed');
+
+// Removing several students at once: all must be on the roster, duplicates count once, nothing changes on a refusal.
+throws(() => adm('removeStudents', []), /No student is selected/, 'bulk removal of nobody refused');
+throws(() => adm('removeStudents', [S.roster[0].email, 'nobody@x.edu']), /nobody@x.edu is not on the roster/, 'bulk removal with an unknown email refused');
+ok(S.roster.length === 3, 'a refused bulk removal changes nothing');
+{
+  const keep = S.roster[0].email, gone = S.roster.slice(1).map(r => r.email);
+  const logs = adminAct(S, 'inst', 'removeStudents', [[gone[0], gone[0].toUpperCase(), gone[1]]], Date.now());
+  ok(S.roster.length === 1 && S.roster[0].email === keep, 'bulk removal keeps only the unselected student');
+  ok(logs.filter(l => l.action === 'remove students').length === 1 && /^2 students: /.test(logs.find(l => l.action === 'remove students').detail), 'one log line for the bulk removal: ' + logs.map(l => l.action).join(' | '));
+}
 throws(() => adm('importRoster', 'Name,ID\nx,y'), /header row/, 'unknown roster layout refused');
 throws(() => adm('importRoster', 'Student,SIS Login ID\n"    Points Possible",\n"Student, Test",843b2ebf97d6dff55e1ba2ce8c7910f987d72b05'), /no student rows/, 'Canvas file with only the test student refused');
 

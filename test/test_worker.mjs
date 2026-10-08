@@ -144,6 +144,12 @@ ok(r.ok && back.roster.some(x => x.email === m(0)) && back.groups.find(g => g.na
 ok((await (await fetch(API + '/version?c=' + KEY)).json()).version === r.data.version, 'version route matches the write');
 snaps = (await adm('snapshots', [1000])).data.rows;
 ok(snaps[0].action === 'restore' && snaps[1].action === 'remove student', 'the restore itself is snapshotted: ' + snaps.slice(0, 3).map(x => x.action).join(' | '));
+r = await adm('removeStudents', [[m(1), m(2)]]);
+ok(r.ok && !r.data.state.roster.some(x => x.email === m(1) || x.email === m(2)) && r.data.state.roster.some(x => x.email === m(0)), 'two students removed at once');
+ok(/not on the roster/.test((await adm('removeStudents', [[m(1)]])).error), 'bulk removal of a student not on the roster refused');
+r = await adm('deleteInfo');
+ok(r.ok && r.data.state === undefined && r.data.roster === N - 2 && r.data.log > 0 && r.data.snapshots > 0 && typeof r.data.title === 'string',
+  'deleteInfo counts: ' + JSON.stringify(r.data));
 ok(/Type the class key/.test((await adm('deleteClass', ['wrong'])).error), 'delete needs the key typed');
 r = await adm('deleteClass', [KEY]);
 ok(r.ok && !r.data.classes.some(c => c.key === KEY), 'delete class');
