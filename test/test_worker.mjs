@@ -112,8 +112,11 @@ const st = (await adm('get')).data.state;
 ok(st.groups.filter(g => g.topic === '1').length === 1 && st.groups.filter(g => g.dataset === '5').length === 1, 'stored state has one holder each');
 
 // preview and log
-r = await post('/', { token: PROF, class: KEY, action: 'requestJoin', args: [names[0]], viewAs: m(25) });
-ok(r.ok && r.state.preview && r.state.me.request === names[0], 'instructor acts as a student');
+r = await post('/', { token: PROF, class: KEY, action: 'requestJoin', args: [names[0], 'z'.repeat(501)], viewAs: m(25) });
+ok(/limit is 500/.test(r.error), 'a join message over 500 characters is refused');
+r = await post('/', { token: PROF, class: KEY, action: 'requestJoin', args: [names[0], 'Hello from F25'], viewAs: m(25) });
+ok(r.ok && r.state.preview && r.state.me.request === names[0] && r.state.me.requestMessage === 'Hello from F25', 'instructor acts as a student');
+ok((await stu(0, 'state')).state.requests.some(q => q.email === m(25) && q.message === 'Hello from F25'), 'the leader sees the join message');
 r = await post('/', { token: token(m(26)), class: KEY, action: 'leaveGroup', args: [], viewAs: m(0) });
 ok(r.ok && !r.state.preview && (await stu(0, 'state')).state.me.group === names[0], 'student cannot act as another student');
 await post('/', { token: token(m(3)), class: KEY, action: 'state', note: 'sign in' });
@@ -122,7 +125,7 @@ const count = a => rows.filter(x => x.action === a).length;
 ok(count('claim topic') === 1 && count('refused: claimTopic') === 9 && count('create group') === 10 && count('approve request') === 10,
   'log has one line per action and per refusal');
 ok(rows.some(x => x.action === 'sign in' && x.actor === m(3)) && rows.some(x => /preview by prof@gmail.com/.test(x.actor)), 'sign-ins and previews are logged');
-ok((await adm('log', ['refused', 1000])).data.rows.length === 18, 'log search');
+ok((await adm('log', ['refused', 1000])).data.rows.length === 19, 'log search');  // 9 + 9 claims, 1 long join message
 
 // instructor edits, then delete
 r = await adm('setClaim', [names[2], 'topic', '9']);

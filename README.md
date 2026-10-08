@@ -13,6 +13,7 @@ No student data is stored in this repository. Each class's roster, groups, claim
 
 - Only emails on the class roster can use the student page. Students sign in with Google.
 - A student creates a new group or asks to join an existing one. The student who created the group (the leader) approves or declines each request.
+- A join request may carry a message to the leader (optional, at most 500 characters), shown to the leader beside the request and to the student while the request waits.
 - A group has at most 3 members: the leader plus up to two approved students.
 - Only the leader claims the dataset and topic, and only when the group has at least 2 members.
 - A claimed dataset or topic is unavailable to other groups. A leader may switch to any unclaimed item, which releases the old one.

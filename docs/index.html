@@ -76,6 +76,10 @@
     .modal h2 { margin-bottom: 8px; }
     .modal p { margin: 0 0 8px; }
     .modal .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .modal label { display: block; font-weight: 600; margin: 4px 0; }
+    .modal textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid #bbb; border-radius: 6px; resize: vertical; }
+    .modal .count { text-align: right; font-size: 13px; }
+    .note-text { flex-basis: 100%; white-space: pre-wrap; overflow-wrap: anywhere; background: #f5f5f5; border-radius: 6px; padding: 6px 10px; margin: 0; }
     @media (max-width: 600px) { td.act { white-space: normal; } }
   </style>
 </head>
@@ -254,8 +258,8 @@
 
   // ---------------------------------------------------------------- rendering
 
-  /** A confirmation pop-up. Resolves to true when the student confirms. */
-  function ask(title, lines, okLabel, danger) {
+  /** A confirmation pop-up. Resolves to true when the student confirms. field: an optional input shown below the lines. */
+  function ask(title, lines, okLabel, danger, field) {
     return new Promise(function (resolve) {
       asking = true;
       var veil;
@@ -263,17 +267,28 @@
       var onKey = function (ev) { if (ev.key === 'Escape') done(false); };
       var box = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, el('h2', { text: title }));
       lines.forEach(function (l) { box.appendChild(el('p', { text: l })); });
+      if (field) box.appendChild(field);
       var ok = el('button', { text: okLabel, class: danger ? 'danger' : '', on: { click: function () { done(true); } } });
       box.appendChild(el('div', { class: 'buttons' },
         el('button', { class: 'plain', text: 'Cancel', on: { click: function () { done(false); } } }), ok));
       veil = el('div', { class: 'veil', on: { click: function (ev) { if (ev.target === veil) done(false); } } }, box);
       document.body.appendChild(veil);
       document.addEventListener('keydown', onKey);
-      ok.focus();
+      (field && field.querySelector('textarea') || ok).focus();
     });
   }
 
-  /** A button that opens a confirmation pop-up before it acts. confirmSpec: null, or {title, lines, ok, danger}. */
+  /** The message box of a join request, with a character count. Returns {box, area}. */
+  function messageField() {
+    var max = 500;  // MAX_MESSAGE in rules.js
+    var area = el('textarea', { id: 'joinmsg', rows: 5, maxlength: max,
+      placeholder: 'For example: your major, your skills, or why you would like to join this group.' });
+    var count = el('div', { class: 'muted count', text: '0 / ' + max });
+    area.addEventListener('input', function () { count.textContent = area.value.length + ' / ' + max; });
+    return { box: el('div', {}, el('label', { for: 'joinmsg', text: 'Message to the leader (optional)' }), area, count), area: area };
+  }
+
+  /** A button that opens a confirmation pop-up before it acts. confirmSpec: null, or {title, lines, ok, danger, field}. */
   function actionButton(label, confirmSpec, run, plain) {
     return el('button', {
       text: label,
@@ -281,7 +296,7 @@
       disabled: busy || S.closed || !S.me,
       on: { click: function () {
         if (!confirmSpec) { run(); return; }
-        ask(confirmSpec.title, confirmSpec.lines, confirmSpec.ok || label, !!confirmSpec.danger)
+        ask(confirmSpec.title, confirmSpec.lines, confirmSpec.ok || label, !!confirmSpec.danger, confirmSpec.field)
           .then(function (yes) { if (yes) run(); });
       } }
     });
@@ -351,6 +366,7 @@
           var target = S.groups.filter(function (g) { return g.name === me.request; })[0];
           card.appendChild(el('p', { text: 'Your request to join ' + me.request + ' is waiting for approval by ' +
             (target ? target.leader : 'its leader') + '.' }));
+          if (me.requestMessage) card.appendChild(el('p', { class: 'note-text', text: 'Your message: ' + me.requestMessage }));
           if (canAct) card.appendChild(actionButton('Cancel request',
             { title: 'Withdraw your request?', lines: ['Your request to join ' + me.request + ' will be cancelled. You can ask again later.'], ok: 'Withdraw request', danger: true },
             function () { send('cancelRequest', [], 'Request cancelled.'); }, true));
@@ -428,6 +444,7 @@
           var rl = el('ul', { class: 'plain' });
           S.requests.forEach(function (q) {
             rl.appendChild(el('li', {}, el('span', { text: q.name }),
+              q.message ? el('p', { class: 'note-text', text: q.message }) : null,
               actionButton('Approve',
                 { title: 'Add ' + q.name + ' to your group?', lines: ['Your group will then have ' + (my.members.length + 1) + ' of at most ' + S.maxSize + ' members.',
                   'As the leader, you can remove a member later.'] },
@@ -474,11 +491,12 @@
       else if (g.full) box.appendChild(el('span', { class: 'muted', text: 'Full' }));
       else if (me && me.request === g.name) box.appendChild(el('span', { class: 'muted', text: 'Request sent' }));
       else if (canAct && !my) {
+        var msg = messageField();
         box.appendChild(actionButton('Ask to join',
-          { title: 'Ask to join ' + g.name + '?', ok: 'Send request', lines: [
+          { title: 'Ask to join ' + g.name + '?', ok: 'Send request', field: msg.box, lines: [
             'Its leader, ' + g.leader + ', approves or declines your request.',
             me.request ? 'Your pending request to join ' + me.request + ' will be replaced.' : null].filter(Boolean) },
-          function () { send('requestJoin', [g.name], 'Request sent to the leader of ' + g.name + '.'); }, true));
+          function () { send('requestJoin', [g.name, msg.area.value], 'Request sent to the leader of ' + g.name + '.'); }, true));
       }
       grid.appendChild(box);
     });

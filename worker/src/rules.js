@@ -11,12 +11,14 @@
  *            An item set by the instructor is locked: the group cannot switch or release it until the instructor undoes it.
  *            groupDataset/groupOwnLink/groupTopic: what the group itself claimed last, kept when the instructor overrides it
  *            so the undo can restore it.
- *   requests [{time, email, group, status, decidedAt}]
+ *   requests [{time, email, group, status, decidedAt, message}]  message: the student's note to the leader (at most MAX_MESSAGE characters)
  *   datasets [{code, name, link, own, reserved}]
  *   topics   [{code, topic, description}]
  */
 
 export const TZ = 'America/New_York';
+/** Longest message a student may send with a join request. */
+export const MAX_MESSAGE = 500;
 
 const norm = s => String(s ?? '').trim().toLowerCase();
 const text = s => String(s ?? '').trim();
@@ -131,13 +133,15 @@ const ACTIONS = {
     c.log('create group', name);
   },
 
-  requestJoin(c, groupName) {
+  requestJoin(c, groupName, message) {
     if (c.me.group) throw new Error('You are in ' + c.me.group + '. Leave it before asking to join another group.');
     const g = group(c.s, groupName);
     if (!g) throw new Error('That group no longer exists.');
     if (members(c.s, g.name).length >= num(c.s.settings.maxSize, 3)) throw new Error(g.name + ' is full.');
+    const note = text(message);
+    if (note.length > MAX_MESSAGE) throw new Error('The message has ' + note.length + ' characters; the limit is ' + MAX_MESSAGE + '.');
     closeRequests(c.s, q => q.email === c.email, 'cancelled', c.now);
-    c.s.requests.push({ time: c.now, email: c.email, group: g.name, status: 'pending', decidedAt: '' });
+    c.s.requests.push({ time: c.now, email: c.email, group: g.name, status: 'pending', decidedAt: '', message: note });
     c.log('request to join', g.name);
   },
 
@@ -305,10 +309,11 @@ export function view(s, real, viewAs, admin, nowMs) {
     preview: email !== real,
     // Instructors receive the roster so the page can offer "preview as student".
     roster: admin ? s.roster.map(r => ({ email: r.email, name: fullName(r) })) : null,
-    me: me ? { name: fullName(me), group: myGroup, leader: leading, request: myRequest ? myRequest.group : '' } : null,
+    me: me ? { name: fullName(me), group: myGroup, leader: leading, request: myRequest ? myRequest.group : '',
+               requestMessage: myRequest ? myRequest.message || '' : '' } : null,
     // Requests waiting for this student's decision (group leaders only).
     requests: leading
-      ? pending.filter(q => q.group === myGroup).map(q => ({ email: q.email, name: nameOf(q.email) }))
+      ? pending.filter(q => q.group === myGroup).map(q => ({ email: q.email, name: nameOf(q.email), message: q.message || '' }))
       : [],
     title: s.settings.title,
     deadlineText: isNaN(deadline) ? '' : new Intl.DateTimeFormat('en-US', {
