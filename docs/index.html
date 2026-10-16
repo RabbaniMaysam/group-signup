@@ -49,6 +49,7 @@
     .tile span { display: block; font-size: 13px; opacity: .9; margin-top: 4px; }
     .tile.dataset { background: linear-gradient(135deg, #0b5cad, #2f86dc); }
     .tile.topic { background: linear-gradient(135deg, #1a7f37, #3aa85a); }
+    .tile.topic2 { background: linear-gradient(135deg, #6a3d9a, #9466c8); }
     .tile.todo { background: linear-gradient(135deg, #b36b00, #e69a1a); }
     .tile.open { outline: 3px solid rgba(0, 0, 0, .2); }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -95,7 +96,7 @@
   var TOKEN_KEY = 'signup_token';
   var conf = null, token = '', S = null, note = '';
   var busy = false, flash = null, asking = false, ownLink = '', viewAs = '';
-  var page = 'home';  // 'home', 'datasets', or 'topics'
+  var page = 'home';  // 'home', 'datasets', 'topics', or 'topics2' (the third member's own topic)
   var expanded = {};  // tiles on the group card that are open: {dataset: true, topic: true}
   // The token is kept in localStorage: the Worker's session token (sent after a Google sign-in) lasts months. "Sign out" deletes it.
   try { token = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) {}
@@ -326,6 +327,9 @@
     // An item the instructor set is locked for the group until the instructor undoes it.
     var lockedD = !!my && my.datasetBy === 'instructor', lockedT = !!my && my.topicBy === 'instructor';
     var canClaimD = canClaim && !lockedD, canClaimT = canClaim && !lockedT;
+    // A third member, added by the instructor to a pair, claims a second topic of their own.
+    var lockedT2 = !!my && my.topic2By === 'instructor';
+    var canClaimT2 = canAct && !!my && me.third && !lockedT2;
     var byCode = function (list, code) { return list.filter(function (x) { return x.code === code; })[0]; };
 
     // ---- header
@@ -388,11 +392,13 @@
       } else {
         var d = my.dataset !== '' ? byCode(S.datasets, my.dataset) : null;
         var t = my.topic !== '' ? byCode(S.topics, my.topic) : null;
+        var t2 = my.topic2 !== '' ? byCode(S.topics, my.topic2) : null;
         var members = el('span');
         my.members.forEach(function (m, i) {
           if (i) members.appendChild(document.createTextNode(', '));
-          members.appendChild(document.createTextNode(m.name + (m.name === my.leader ? ' (leader)' : '')));
-          if (canAct && me.leader && m.email && m.email !== S.email) {
+          var isThird = !!my.third && m.name === my.third;
+          members.appendChild(document.createTextNode(m.name + (m.name === my.leader ? ' (leader)' : '') + (isThird ? ' (third member)' : '')));
+          if (canAct && me.leader && m.email && m.email !== S.email && !isThird) {
             members.appendChild(document.createTextNode(' '));
             members.appendChild(actionButton('remove',
               { title: 'Remove ' + m.name + ' from your group?', lines: [m.name + ' will be without a group and can ask to join again.'], danger: true },
@@ -404,39 +410,47 @@
           el('dt', { text: 'Members' }), el('dd', {}, members)));
 
         // Releasing frees the item without taking another; two groups use it to swap when everything is taken.
+        var noun = { dataset: 'dataset', topic: 'topic', topic2: 'second topic' };
         var releaseButton = function (kind, name) {
+          var whose = kind === 'topic2' ? 'You' : 'Your group';
           return actionButton('Release it without switching',
-            { title: 'Release "' + name + '"?', ok: 'Release ' + kind, danger: true, lines: [
-              'Your group will have no ' + kind + ' until you claim another one.',
+            { title: 'Release "' + name + '"?', ok: 'Release ' + noun[kind], danger: true, lines: [
+              whose + ' will have no ' + noun[kind] + ' until you claim another one.',
               'Once released, any group can claim "' + name + '".'] },
-            function () { send(kind === 'dataset' ? 'releaseDataset' : 'releaseTopic', [], 'Released. Your group has no ' + kind + ' now.'); }, true);
+            function () { send({ dataset: 'releaseDataset', topic: 'releaseTopic', topic2: 'releaseTopic2' }[kind], [], 'Released. ' + whose + ' have no ' + noun[kind] + ' now.'); }, true);
         };
-        // Two tiles, one per task, each with its own details beneath it. A claimed tile toggles its details
-        // (both may be open at once); an unclaimed one opens the list.
+        // One tile per task, each with its own details beneath it. A claimed tile toggles its details
+        // (several may be open at once); an unclaimed one opens the list. The second topic belongs to the third member.
         var tile = function (kind, have, label, p, body) {
+          var mayClaim = kind === 'topic2' ? canAct && me.third : canClaim;
+          var claimer = kind === 'topic2' ? my.third + ', the third member,' : 'the leader, ' + my.leader + ',';
           if (!have) return el('button', { class: 'tile todo', on: { click: open(p) } },
-            el('small', { text: kind }), el('b', { text: 'Not claimed yet' }),
-            el('span', { text: canClaim ? 'Click to choose' : me.leader ? 'Your leader claims it once the group has ' + S.minToClaim + ' members' : 'Your leader claims it' }));
+            el('small', { text: noun[kind] }), el('b', { text: 'Not claimed yet' }),
+            el('span', { text: mayClaim ? 'Click to choose' : kind === 'topic2' ? my.third + ' claims it'
+              : me.leader ? 'Your leader claims it once the group has ' + S.minToClaim + ' members' : 'Your leader claims it' }));
           var isOpen = !!expanded[kind];
           var box = null;
           if (isOpen) {
             box = el('div', { class: 'detail' }, body);
             if (my[kind + 'By'] === 'instructor') box.appendChild(el('p', { class: 'muted', text: 'Set by your instructor. Only the instructor can change it.' }));
-            else if (canClaim) box.appendChild(el('div', { class: 'row' },
-              el('button', { class: 'switch', text: 'Want to switch to another ' + kind + '?', on: { click: open(p) } }),
+            else if (mayClaim) box.appendChild(el('div', { class: 'row' },
+              el('button', { class: 'switch', text: 'Want to switch to another ' + noun[kind] + '?', on: { click: open(p) } }),
               releaseButton(kind, label)));
-            else box.appendChild(el('p', { class: 'muted', text: 'Only the leader, ' + my.leader + ', can switch or release it.' }));
+            else box.appendChild(el('p', { class: 'muted', text: 'Only ' + claimer + ' can switch or release it.' }));
           }
           return el('div', {}, el('button', { class: 'tile ' + kind + (isOpen ? ' open' : ''),
             on: { click: function () { expanded[kind] = !isOpen; render(); } } },
-            el('small', { text: kind + (isOpen ? ' ▴' : ' ▾') }), el('b', { text: label })), box);
+            el('small', { text: noun[kind] + (isOpen ? ' ▴' : ' ▾') }), el('b', { text: label })), box);
         };
         var url = d ? (my.ownLink || (d.own ? '' : d.link)) : '';
         card.appendChild(el('div', { class: 'tiles' },
           tile('dataset', !!d, d ? d.name : '', 'datasets',
             url ? el('p', {}, el('a', { href: url, target: '_blank', rel: 'noopener', text: url }))
                 : el('p', { class: 'muted', text: 'No link is on file for this dataset.' })),
-          tile('topic', !!t, t ? t.topic : '', 'topics', el('p', { text: t && t.description ? t.description : 'No description.' }))));
+          tile('topic', !!t, t ? t.topic : '', 'topics', el('p', { text: t && t.description ? t.description : 'No description.' })),
+          my.third ? tile('topic2', !!t2, t2 ? t2.topic : '', 'topics2', el('p', { text: t2 && t2.description ? t2.description : 'No description.' })) : null));
+        if (me.third) card.appendChild(el('div', { class: 'banner note', text: 'Your instructor added you to this group as its third member. ' +
+          'You claim a second topic of your own, and you present it.' }));
 
         if (me.leader) {
           card.appendChild(el('h3', { text: 'Requests to join' }));
@@ -466,6 +480,7 @@
             { title: 'Leave ' + my.name + '?', ok: 'Leave group', danger: true, lines: [
               alone ? 'You are its only member, so the group will be deleted and its dataset and topic released.'
                 : me.leader ? 'Another member becomes the leader. The group keeps its dataset and topic.'
+                : me.third ? 'Your second topic is released. Only the instructor can add you to a full group again.'
                 : 'You will be without a group and can ask to join another one.'] },
             function () { send('leaveGroup', [], 'You left ' + my.name + '.'); }, true)));
         }
@@ -486,7 +501,8 @@
         el('div', { class: 'line' }, el('span', { text: 'Members: ' }),
           g.members.map(function (m) { return m.name + (m.name === g.leader ? ' (leader)' : ''); }).join(', ')),
         el('div', { class: 'line' }, el('span', { text: 'Dataset: ' }), gd ? gd.name : '—'),
-        el('div', { class: 'line', style: 'margin-bottom:6px' }, el('span', { text: 'Topic: ' }), gt ? gt.topic : '—'));
+        el('div', { class: 'line', style: g.topic2 ? '' : 'margin-bottom:6px' }, el('span', { text: 'Topic: ' }), gt ? gt.topic : '—'),
+        g.topic2 ? el('div', { class: 'line', style: 'margin-bottom:6px' }, el('span', { text: 'Second topic: ' }), (byCode(S.topics, g.topic2) || { topic: g.topic2 }).topic) : null);
       if (mine) box.appendChild(el('span', { class: 'tag yours', text: 'Your group' }));
       else if (g.full) box.appendChild(el('span', { class: 'muted', text: 'Full' }));
       else if (me && me.request === g.name) box.appendChild(el('span', { class: 'muted', text: 'Request sent' }));
@@ -556,28 +572,41 @@
     }
 
     // ---- topics
-    if (page === 'topics') {
-    var tcard = el('div', { class: 'card' }, el('h2', { text: 'Presentation topics' }));
-    if (lockedT) tcard.appendChild(el('p', { class: 'muted', text: 'Your instructor set the highlighted topic for your group. Only the instructor can change it.' }));
+    // 'topics2' is the same list for the third member's own topic.
+    if (page === 'topics' || page === 'topics2') {
+    var second = page === 'topics2' && !!my && !!my.third;
+    var tk = second ? 'topic2' : 'topic';
+    var other = my ? my[second ? 'topic' : 'topic2'] : '';
+    var mayT = second ? canClaimT2 : canClaimT;
+    var tcard = el('div', { class: 'card' }, el('h2', { text: second ? 'Your second topic' : 'Presentation topics' }));
+    if (second) {
+      if (lockedT2) tcard.appendChild(el('p', { class: 'muted', text: 'Your instructor set the highlighted topic for you. Only the instructor can change it.' }));
+      else if (mayT) tcard.appendChild(el('p', { class: 'muted', text: my.topic2 === '' ? 'As the third member of your group, claim one topic of your own.' : 'You hold the highlighted topic. Switching releases it.' }));
+      else tcard.appendChild(el('p', { class: 'muted', text: 'Only ' + my.third + ', the third member of your group, can claim this topic.' }));
+    }
+    else if (lockedT) tcard.appendChild(el('p', { class: 'muted', text: 'Your instructor set the highlighted topic for your group. Only the instructor can change it.' }));
     else if (canClaim) tcard.appendChild(el('p', { class: 'muted', text: my.topic === '' ? 'Claim one topic for your group.' : 'Your group holds the highlighted topic. Switching releases it.' }));
     else if (my) tcard.appendChild(el('p', { class: 'muted', text: me.leader ? 'Your group needs ' + S.minToClaim + ' members before you can claim.' : 'Only your group leader can claim.' }));
     var tt = el('table', {}, el('tr', {}, el('th', { text: 'Topic' }), el('th', { text: 'Status' }), el('th', {})));
     S.topics.forEach(function (t) {
-      var mine = my && my.topic === t.code;
+      var mine = my && my[tk] === t.code;
+      var ours = my && other === t.code;
       var takenByOther = t.claimedBy.length && !mine;
-      var status = mine ? el('span', { class: 'tag yours', text: 'Your group' })
+      var status = mine ? el('span', { class: 'tag yours', text: second ? 'Yours' : 'Your group' })
+        : ours ? el('span', { class: 'taken', text: second ? 'Your group\'s first topic' : 'Second topic of your group' })
         : takenByOther ? el('span', { class: 'taken', text: 'Claimed by ' + t.claimedBy.join(', ') })
         : el('span', { class: 'tag free', text: 'Available' });
       var act = el('td', { class: 'act' });
-      if (canClaimT && !takenByOther && !mine) {
-        var replacing = my.topic !== '';
-        var current = replacing ? byCode(S.topics, my.topic) : null;
+      if (mayT && !takenByOther && !mine) {
+        var replacing = my[tk] !== '';
+        var current = replacing ? byCode(S.topics, my[tk]) : null;
+        var whose = second ? 'You currently hold "' : 'Your group currently holds "';
         act.appendChild(actionButton(replacing ? 'Switch' : 'Claim',
           replacing ? { title: 'Switch to "' + t.topic + '"?', ok: 'Switch topic', danger: true, lines: [
-              'Your group currently holds "' + (current ? current.topic : my.topic) + '". Switching releases it, and another group may claim it right away.'] }
-            : { title: 'Claim "' + t.topic + '" for your group?', ok: 'Claim topic', lines: [
+              whose + (current ? current.topic : my[tk]) + '". Switching releases it, and another group may claim it right away.'] }
+            : { title: 'Claim "' + t.topic + '"' + (second ? ' as your topic?' : ' for your group?'), ok: 'Claim topic', lines: [
               'Only one group can hold this topic. You can switch until the deadline.'] },
-          function () { send('claimTopic', [t.code], 'Topic saved: ' + t.topic + '.', open('home')); }, replacing));
+          function () { send(second ? 'claimTopic2' : 'claimTopic', [t.code], 'Topic saved: ' + t.topic + '.', open('home')); }, replacing));
       }
       tt.appendChild(el('tr', { class: mine ? 'mine' : '' },
         el('td', {}, el('div', { text: t.topic }), el('div', { class: 'desc', text: t.description })),

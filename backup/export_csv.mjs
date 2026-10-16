@@ -44,12 +44,15 @@ for (const row of all('SELECT key, state FROM classes ORDER BY key')) {
   const membersOf = name => C.roster.filter(r => r.group === name);
   const claimBy = (g, f) => g[f] === '' ? '' : (g[f + 'By'] === 'instructor' ? 'instructor' : 'group');
   // Groups (as the instructor page's "Download groups").
-  write('signup_' + safe(k) + '_groups.csv', [['Group', 'Leader', 'Members', 'Member emails', 'Dataset code', 'Dataset', 'Own dataset link', 'Dataset set by', 'Topic code', 'Topic', 'Topic set by']]
+  write('signup_' + safe(k) + '_groups.csv', [['Group', 'Leader', 'Members', 'Member emails', 'Dataset code', 'Dataset', 'Own dataset link', 'Dataset set by', 'Topic code', 'Topic', 'Topic set by',
+    'Third member', 'Second topic code', 'Second topic', 'Second topic set by']]
     .concat(C.groups.map(g => {
       const ms = membersOf(g.name), d = C.datasets.find(x => x.code === g.dataset), t = C.topics.find(x => x.code === g.topic);
+      const t2 = C.topics.find(x => x.code === g.topic2), third = ms.find(r => r.email === g.third);
       const lead = ms.find(r => r.email === g.leader);
       return [g.name, lead ? fullName(lead) : g.leader, ms.map(fullName).join('; '), ms.map(r => r.email).join('; '),
-        g.dataset, d ? d.name : '', g.ownLink, claimBy(g, 'dataset'), g.topic, t ? t.topic : '', claimBy(g, 'topic')];
+        g.dataset, d ? d.name : '', g.ownLink, claimBy(g, 'dataset'), g.topic, t ? t.topic : '', claimBy(g, 'topic'),
+        third ? fullName(third) : g.third, g.topic2, t2 ? t2.topic : '', claimBy(g, 'topic2')];
     })));
   write('signup_' + safe(k) + '_roster.csv', [['Last name', 'First name', 'Email', 'Group', 'Joined (New York)']]
     .concat(C.roster.map(r => [r.last, r.first, r.email, r.group || '', r.joinedAt ? isoFull(r.joinedAt) : ''])));

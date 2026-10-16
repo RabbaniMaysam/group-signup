@@ -14,9 +14,10 @@ No student data is stored in this repository. Each class's roster, groups, claim
 - Only emails on the class roster can use the student page. Students sign in with Google.
 - A student creates a new group or asks to join an existing one. The student who created the group (the leader) approves or declines each request.
 - A join request may carry a message to the leader (optional, at most 500 characters), shown to the leader beside the request and to the student while the request waits.
-- A group has at most 3 members: the leader plus up to two approved students.
+- A group has at most "Maximum group size" members (3 by default; 2 for ECON 573): the leader plus the approved students.
 - Only the leader claims the dataset and topic, and only when the group has at least 2 members.
-- A claimed dataset or topic is unavailable to other groups. A leader may switch to any unclaimed item, which releases the old one.
+- Third member: only the instructor can add a student to a full group (Roster tab, move to the group). That student becomes the group's third member and claims a second topic of their own (`claimTopic2`, `releaseTopic2`); the leader cannot claim that topic or remove that student. When the third member leaves, the second topic is released. The instructor can name another member as third member or remove the role (`setThird`) and set or release the second topic (`setClaim` with kind `topic2`).
+- A claimed dataset or topic is unavailable to other groups (a topic held as a second topic counts). A leader may switch to any unclaimed item, which releases the old one.
 - If the leader leaves, the member who joined earliest becomes leader. A group whose last member leaves is deleted and its claims are released.
 - The number of groups is capped (20 by default). Students are not shown the cap.
 - After the deadline nothing can be changed from the student page.
@@ -32,7 +33,7 @@ Only the accounts in the Worker's `ADMIN_EMAILS` secret can use it. Neither the 
 | Overview | Student link, title, deadline, limits, downloads of the groups and the full log, delete the class (two confirmations: the first lists what the class holds, from `deleteInfo`; the second needs the class key typed) |
 | QR code | The student link as a QR code with the live status; "Open in a new tab" opens it full screen (`admin.html?qr=KEY`) for the projector |
 | Roster | Import the roster (see Roster files), add or remove one student, remove several at once (checkboxes with "Select all" and "Select none", then "Remove selected"; `removeStudents`), move a student to a group |
-| Groups | Change the leader, assign or release a dataset or topic, delete a group |
+| Groups | Change the leader, name the third member, assign or release a dataset, topic, or second topic, delete a group |
 | Datasets, Topics | Add, edit, or remove catalog items |
 | Log | Every sign-in, action, and refused attempt with its reason, time, and account |
 

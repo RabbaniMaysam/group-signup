@@ -11,6 +11,9 @@
  *            An item set by the instructor is locked: the group cannot switch or release it until the instructor undoes it.
  *            groupDataset/groupOwnLink/groupTopic: what the group itself claimed last, kept when the instructor overrides it
  *            so the undo can restore it.
+ *            third: email of the third member, whom only the instructor adds to a full group; '' when none.
+ *            topic2, topic2At, topic2By, groupTopic2: the third member's own topic, claimed by that member (not the leader).
+ *            A topic code is held by at most one group in topic or topic2.
  *   requests [{time, email, group, status, decidedAt, message}]  message: the student's note to the leader (at most MAX_MESSAGE characters)
  *   datasets [{code, name, link, own, reserved}]
  *   topics   [{code, topic, description}]
@@ -70,9 +73,26 @@ function newGroup(s, leader, now) {
   while (group(s, 'Group ' + n)) n++;
   const name = 'Group ' + n;
   s.groups.push({ name: name, leader: leader.email, createdAt: now, dataset: '', ownLink: '', datasetAt: '', datasetBy: '', groupDataset: '', groupOwnLink: '',
-                 topic: '', topicAt: '', topicBy: '', groupTopic: '' });
+                 topic: '', topicAt: '', topicBy: '', groupTopic: '', third: '', topic2: '', topic2At: '', topic2By: '', groupTopic2: '' });
   setMember(leader, name, now);
   return name;
+}
+
+const TOPIC_KEYS = ['topic', 'topic2'];
+/** The group holding a topic code in either field, other than group g's own field key. */
+function topicHolder(s, code, g, key) {
+  if (!code) return null;
+  return s.groups.find(x => TOPIC_KEYS.some(k => x[k] === code && !(x === g && k === key))) || null;
+}
+
+function clearTopic2(g) { g.topic2 = ''; g.topic2At = ''; g.topic2By = ''; g.groupTopic2 = ''; }
+
+/** The third member is gone: the group no longer has one, and that member's topic is released. */
+function dropThird(g, log) {
+  if (!g.third) return;
+  log('third member leaves', g.name + ': ' + g.third + (g.topic2 ? '; second topic ' + g.topic2 + ' released' : ''));
+  g.third = '';
+  clearTopic2(g);
 }
 
 /**
@@ -86,6 +106,7 @@ function detach(s, st, now, log) {
   const g = group(s, name);
   setMember(st, '', now);
   if (!g) return;
+  if (g.third === st.email) dropThird(g, log);
   const others = members(s, name).sort((a, b) => (a.joinedAt < b.joinedAt ? -1 : a.joinedAt > b.joinedAt ? 1 : 0));
   if (!others.length) {
     closeRequests(s, q => q.group === name, 'declined (group closed)', now);
@@ -116,8 +137,15 @@ function claimingGroup(c) {
 /** An item the instructor set stays fixed until the instructor undoes it. */
 function locked(g, kind) {
   if (g[kind + 'By'] === 'instructor') {
-    throw new Error('Your instructor set this ' + kind + ' for your group. Only the instructor can change it.');
+    throw new Error('Your instructor set this ' + (kind === 'topic2' ? 'topic for you' : kind + ' for your group') + '. Only the instructor can change it.');
   }
+}
+
+/** The group of the student acting, who must be its third member. */
+function thirdGroup(c) {
+  const g = group(c.s, c.me.group);
+  if (!g || g.third !== c.email) throw new Error('Only the third member of a group, added by the instructor, claims a second topic.');
+  return g;
 }
 
 // ---------------------------------------------------------------- student actions
@@ -176,6 +204,7 @@ const ACTIONS = {
     if (who === c.email) throw new Error('Use Leave to leave your own group.');
     const st = student(c.s, who);
     if (!st || st.group !== g.name) throw new Error('That student is not in ' + g.name + '.');
+    if (g.third === who) throw new Error('Your instructor added ' + fullName(st) + ' to your group. Only the instructor can remove them.');
     setMember(st, '', c.now);
     c.log('remove member', who + ' from ' + g.name);
   },
@@ -210,10 +239,22 @@ const ACTIONS = {
     locked(g, 'topic');
     const t = c.s.topics.find(x => x.code === String(code));
     if (!t) throw new Error('That topic does not exist.');
-    const holder = c.s.groups.find(x => x.topic === t.code && x !== g);
-    if (holder) throw new Error('"' + t.topic + '" was just claimed by ' + holder.name + '. Choose another topic.');
+    const holder = topicHolder(c.s, t.code, g, 'topic');
+    if (holder) throw new Error('"' + t.topic + '" was just claimed by ' + (holder === g ? 'your group\'s third member' : holder.name) + '. Choose another topic.');
     g.topic = t.code; g.topicAt = c.now; g.topicBy = 'group'; g.groupTopic = t.code;
     c.log('claim topic', g.name + ': ' + t.code + ' ' + t.topic);
+  },
+
+  /** The third member's own topic. The group-size minimum does not apply: the group has three members. */
+  claimTopic2(c, code) {
+    const g = thirdGroup(c);
+    locked(g, 'topic2');
+    const t = c.s.topics.find(x => x.code === String(code));
+    if (!t) throw new Error('That topic does not exist.');
+    const holder = topicHolder(c.s, t.code, g, 'topic2');
+    if (holder) throw new Error('"' + t.topic + '" was just claimed by ' + (holder === g ? 'your group' : holder.name) + '. Choose another topic.');
+    g.topic2 = t.code; g.topic2At = c.now; g.topic2By = 'group'; g.groupTopic2 = t.code;
+    c.log('claim second topic', g.name + ': ' + t.code + ' ' + t.topic);
   },
 
   // Releasing frees the item for any group. It lets two groups swap items when everything is taken.
@@ -233,6 +274,15 @@ const ACTIONS = {
     const t = c.s.topics.find(x => x.code === g.topic);
     c.log('release topic', g.name + ': ' + g.topic + ' ' + (t ? t.topic : ''));
     g.topic = ''; g.topicAt = ''; g.topicBy = ''; g.groupTopic = '';
+  },
+
+  releaseTopic2(c) {
+    const g = thirdGroup(c);
+    locked(g, 'topic2');
+    if (g.topic2 === '') return;
+    const t = c.s.topics.find(x => x.code === g.topic2);
+    c.log('release second topic', g.name + ': ' + g.topic2 + ' ' + (t ? t.topic : ''));
+    clearTopic2(g);
   }
 };
 
@@ -260,6 +310,7 @@ export function upgrade(s) {
       if (g[own] === undefined) g[own] = g[k + 'By'] === 'group' ? g[k] : '';
     });
     if (g.groupOwnLink === undefined) g.groupOwnLink = g.datasetBy === 'group' ? g.ownLink : '';
+    ['third', 'topic2', 'topic2At', 'topic2By', 'groupTopic2'].forEach(k => { if (g[k] === undefined) g[k] = ''; });
   });
   return s;
 }
@@ -309,7 +360,7 @@ export function view(s, real, viewAs, admin, nowMs) {
     preview: email !== real,
     // Instructors receive the roster so the page can offer "preview as student".
     roster: admin ? s.roster.map(r => ({ email: r.email, name: fullName(r) })) : null,
-    me: me ? { name: fullName(me), group: myGroup, leader: leading, request: myRequest ? myRequest.group : '',
+    me: me ? { name: fullName(me), group: myGroup, leader: leading, third: !!g0 && g0.third === email, request: myRequest ? myRequest.group : '',
                requestMessage: myRequest ? myRequest.message || '' : '' } : null,
     // Requests waiting for this student's decision (group leaders only).
     requests: leading
@@ -335,7 +386,10 @@ export function view(s, real, viewAs, admin, nowMs) {
         ownLink: g.ownLink,
         datasetBy: g.datasetBy || '',
         topic: g.topic,
-        topicBy: g.topicBy || ''
+        topicBy: g.topicBy || '',
+        third: g.third ? nameOf(g.third) : '',
+        topic2: g.topic2 || '',
+        topic2By: g.topic2By || ''
       };
     }),
     datasets: s.datasets.map(d => ({
@@ -344,7 +398,7 @@ export function view(s, real, viewAs, admin, nowMs) {
     })),
     topics: s.topics.map(t => ({
       code: t.code, topic: t.topic, description: t.description,
-      claimedBy: s.groups.filter(g => g.topic === t.code).map(g => g.name)
+      claimedBy: s.groups.filter(g => g.topic === t.code || g.topic2 === t.code).map(g => g.name)
     }))
   };
 }
@@ -493,7 +547,10 @@ const ADMIN = {
     c.log('remove students', sts.length + ' students: ' + sts.map(st => st.email).join(', '));
   },
 
-  /** target: '' = no group, 'new' = a new group led by the student, or a group name. Size limits do not bind the instructor. */
+  /**
+   * target: '' = no group, 'new' = a new group led by the student, or a group name. Size limits do not bind the instructor.
+   * A student moved into a full group without a third member becomes its third member, who claims a second topic.
+   */
   moveStudent(c, email, target) {
     const st = student(c.s, email);
     if (!st) throw new Error('That student is not on the roster.');
@@ -501,15 +558,32 @@ const ADMIN = {
     if (target && target !== 'new' && !group(c.s, target)) throw new Error('That group does not exist.');
     if (st.group === target) return;
     dropStudent(c, st);
+    let third = false;
     if (target === 'new') target = newGroup(c.s, st, c.now);
     else if (target) {
-      if (!group(c.s, target)) throw new Error(target + ' had no other member and was deleted. Choose "New group".');
+      const g = group(c.s, target);
+      if (!g) throw new Error(target + ' had no other member and was deleted. Choose "New group".');
+      const maxSize = num(c.s.settings.maxSize, 3);
+      if (members(c.s, target).length >= maxSize && !g.third) { g.third = st.email; third = true; }
       setMember(st, target, c.now);
-      if (members(c.s, target).length >= num(c.s.settings.maxSize, 3)) {
+      if (members(c.s, target).length >= maxSize) {
         closeRequests(c.s, q => q.group === target, 'declined (group full)', c.now);
       }
     }
-    c.log('move student', st.email + ' -> ' + (target || 'no group'));
+    c.log('move student', st.email + ' -> ' + (target || 'no group') + (third ? ' as third member' : ''));
+  },
+
+  /** Names the group's third member (email of a member), or '' for none, which releases the second topic. */
+  setThird(c, groupName, email) {
+    const g = group(c.s, groupName);
+    if (!g) throw new Error('That group does not exist.');
+    const mail = canonEmail(email);
+    if (mail === g.third) return;
+    if (!mail) { dropThird(g, c.log); return; }
+    const st = student(c.s, mail);
+    if (!st || st.group !== g.name) throw new Error('The third member must be a member of the group.');
+    g.third = st.email;
+    c.log('set third member', g.name + ': ' + st.email + (g.topic2 ? '; keeps second topic ' + g.topic2 : ''));
   },
 
   setLeader(c, groupName, email) {
@@ -520,7 +594,7 @@ const ADMIN = {
     c.log('set leader', g.name + ': ' + st.email);
   },
 
-  /** kind: 'dataset' or 'topic'. An empty code releases the claim. */
+  /** kind: 'dataset', 'topic', or 'topic2' (the third member's topic). An empty code releases the claim. */
   setClaim(c, groupName, kind, code, ownLink) {
     const g = group(c.s, groupName);
     if (!g) throw new Error('That group does not exist.');
@@ -533,14 +607,15 @@ const ADMIN = {
       if (code === g.dataset && (d && d.own ? text(ownLink) : '') === g.ownLink) return;
       g.dataset = code; g.ownLink = d && d.own ? text(ownLink) : ''; g.datasetAt = code ? c.now : '';
       g.datasetBy = code ? 'instructor' : '';
-    } else if (kind === 'topic') {
+    } else if (kind === 'topic' || kind === 'topic2') {
+      if (kind === 'topic2' && code && !g.third) throw new Error(g.name + ' has no third member.');
       const t = c.s.topics.find(x => x.code === code);
       if (code && !t) throw new Error('That topic does not exist.');
-      const holder = t && c.s.groups.find(x => x.topic === code && x !== g);
+      const holder = t && topicHolder(c.s, code, g, kind);
       if (holder) throw new Error('"' + t.topic + '" is claimed by ' + holder.name + '. Release it there first.');
-      if (code === g.topic) return;
-      g.topic = code; g.topicAt = code ? c.now : '';
-      g.topicBy = code ? 'instructor' : '';
+      if (code === g[kind]) return;
+      g[kind] = code; g[kind + 'At'] = code ? c.now : '';
+      g[kind + 'By'] = code ? 'instructor' : '';
     } else throw new Error('Unknown claim type.');
     c.log('set ' + kind, g.name + ': ' + (code || 'released') + (kind === 'dataset' && g.ownLink ? ' ' + g.ownLink : ''));
   },
@@ -549,9 +624,9 @@ const ADMIN = {
   undoClaim(c, groupName, kind) {
     const g = group(c.s, groupName);
     if (!g) throw new Error('That group does not exist.');
-    if (kind !== 'dataset' && kind !== 'topic') throw new Error('Unknown claim type.');
+    if (kind !== 'dataset' && kind !== 'topic' && kind !== 'topic2') throw new Error('Unknown claim type.');
     if (g[kind + 'By'] !== 'instructor') return;
-    const own = kind === 'dataset' ? g.groupDataset : g.groupTopic;
+    const own = kind === 'dataset' ? g.groupDataset : kind === 'topic' ? g.groupTopic : g.groupTopic2;
     if (kind === 'dataset') {
       const d = c.s.datasets.find(x => x.code === own);
       const holder = d && !d.own && c.s.groups.find(x => x.dataset === own && x !== g);
@@ -560,9 +635,10 @@ const ADMIN = {
       g.datasetBy = d ? 'group' : ''; g.groupDataset = d ? own : ''; g.groupOwnLink = d ? g.groupOwnLink : '';
     } else {
       const t = c.s.topics.find(x => x.code === own);
-      const holder = t && c.s.groups.find(x => x.topic === own && x !== g);
+      const holder = t && topicHolder(c.s, own, g, kind);
       if (holder) throw new Error('The group\'s own topic "' + t.topic + '" is now claimed by ' + holder.name + '. Release it there first.');
-      g.topic = t ? own : ''; g.topicAt = t ? c.now : ''; g.topicBy = t ? 'group' : ''; g.groupTopic = t ? own : '';
+      const own2 = kind === 'topic' ? 'groupTopic' : 'groupTopic2';
+      g[kind] = t ? own : ''; g[kind + 'At'] = t ? c.now : ''; g[kind + 'By'] = t ? 'group' : ''; g[own2] = t ? own : '';
     }
     c.log('undo set ' + kind, g.name + ': back to ' + (g[kind] || 'none'));
   },
@@ -606,7 +682,7 @@ const ADMIN = {
 
   removeTopic(c, code) {
     code = text(code);
-    const holder = c.s.groups.find(g => g.topic === code);
+    const holder = topicHolder(c.s, code, null, '');
     if (holder) throw new Error('That topic is claimed by ' + holder.name + '. Release it first.');
     c.s.topics = c.s.topics.filter(x => x.code !== code);
     c.log('remove topic', code);

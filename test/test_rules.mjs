@@ -251,5 +251,57 @@ ok(S.roster.length === 3, 'a refused bulk removal changes nothing');
 throws(() => adm('importRoster', 'Name,ID\nx,y'), /header row/, 'unknown roster layout refused');
 throws(() => adm('importRoster', 'Student,SIS Login ID\n"    Points Possible",\n"Student, Test",843b2ebf97d6dff55e1ba2ce8c7910f987d72b05'), /no student rows/, 'Canvas file with only the test student refused');
 
+// Groups of two; the instructor adds a third member, who claims a second topic of their own.
+{
+  const saved = S;
+  S = newClass('Third member test', SEED_DATASETS, SEED_TOPICS);
+  adm('saveSettings', Object.assign({}, S.settings, { maxSize: 2 }));
+  adm('importRoster', 'first,last,email\n' + 'pqrstu'.split('').map(c => `F${c},L${c},${c}@x.edu`).join('\n'));
+  act1('p', 'createGroup'); act1('q', 'requestJoin', 'Group 1'); act1('p', 'decideRequest', m('q'), true);
+  ok(state('r').groups[0].full, 'a group of two is full at maxSize 2');
+  throws(() => act1('r', 'requestJoin', 'Group 1'), /full/, 'a student cannot ask to join a full pair');
+  act1('p', 'claimTopic', 1);
+  adm('moveStudent', m('r'), 'Group 1');
+  ok(grp('Group 1').third === 'r@x.edu' && state('r').me.third && !state('q').me.third && /as third member/.test(logs[logs.length - 1].detail),
+    'the instructor adds a third member to a full pair');
+  ok(state('p').groups[0].third === 'Fr Lr', 'the group card names the third member');
+  throws(() => act1('q', 'claimTopic2', 2), /Only the third member/, 'a regular member cannot claim the second topic');
+  throws(() => act1('p', 'claimTopic2', 2), /Only the third member/, 'the leader cannot claim the second topic');
+  throws(() => act1('r', 'claimTopic2', 1), /claimed by your group/, 'the second topic differs from the group\'s first topic');
+  throws(() => act1('r', 'claimTopic', 2), /Only the group leader/, 'the third member does not claim the group\'s topic');
+  act1('s', 'createGroup'); act1('t', 'requestJoin', 'Group 2'); act1('s', 'decideRequest', m('t'), true);
+  s = act1('r', 'claimTopic2', 2);
+  ok(grp('Group 1').topic2 === '2' && grp('Group 1').topic2By === 'group' && s.topics.find(t => t.code === '2').claimedBy.join() === 'Group 1', 'the third member claims a second topic');
+  throws(() => act1('s', 'claimTopic', 2), /just claimed by Group 1/, 'another group cannot claim a second topic');
+  throws(() => act1('p', 'claimTopic', 2), /your group's third member/, 'the leader cannot take the third member\'s topic');
+  throws(() => adm('setClaim', 'Group 2', 'topic', '2'), /claimed by Group 1/, 'the instructor cannot double-assign a second topic');
+  throws(() => adm('setClaim', 'Group 2', 'topic2', '3'), /no third member/, 'a pair has no second topic');
+  throws(() => adm('removeTopic', '2'), /claimed by Group 1/, 'a second topic cannot be removed while held');
+  throws(() => act1('p', 'removeMember', m('r')), /Only the instructor can remove/, 'the leader cannot remove the third member');
+  adm('setClaim', 'Group 1', 'topic2', '4');
+  throws(() => act1('r', 'claimTopic2', 5), /set this topic for you/, 'an instructor-set second topic is locked');
+  adm('undoClaim', 'Group 1', 'topic2');
+  ok(grp('Group 1').topic2 === '2' && grp('Group 1').topic2By === 'group', 'undo restores the third member\'s own topic');
+  act1('r', 'releaseTopic2');
+  ok(grp('Group 1').topic2 === '' && grp('Group 1').groupTopic2 === '', 'the third member releases the second topic');
+  act1('r', 'claimTopic2', 6);
+  act1('r', 'leaveGroup');
+  ok(grp('Group 1').third === '' && grp('Group 1').topic2 === '' && state('s').topics.find(t => t.code === '6').claimedBy.length === 0 && grp('Group 1').topic === '1',
+    'when the third member leaves, the second topic is released and the first topic stays');
+  adm('moveStudent', m('u'), 'Group 1');
+  adm('moveStudent', m('r'), 'Group 1');
+  ok(grp('Group 1').third === 'u@x.edu', 'a fourth member does not replace the third member');
+  adm('setThird', 'Group 1', m('r'));
+  ok(grp('Group 1').third === 'r@x.edu' && state('r').me.third && !state('u').me.third, 'the instructor names another member the third member');
+  throws(() => adm('setThird', 'Group 1', m('s')), /must be a member/, 'the third member must be in the group');
+  act1('r', 'claimTopic2', 7);
+  adm('setThird', 'Group 1', '');
+  ok(grp('Group 1').third === '' && grp('Group 1').topic2 === '', 'no third member: the second topic is released');
+  const old = { name: 'Group 9', leader: 'p@x.edu', createdAt: '', dataset: '', ownLink: '', topic: '' };
+  S.groups.push(old); upgrade(S);
+  ok(old.third === '' && old.topic2 === '' && old.groupTopic2 === '', 'stored groups from before the change are upgraded');
+  S = saved;
+}
+
 console.log('passed', pass, 'failed', fail);
 process.exit(fail ? 1 : 0);
