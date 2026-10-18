@@ -19,8 +19,7 @@ export const SEED_DATASETS = [
   [14,"Diabetes prediction dataset","https://www.kaggle.com/datasets/iammustafatz/diabetes-prediction-dataset","no",""],
   [15,"Healthcare patient analytics dataset","https://www.kaggle.com/datasets/abbas829/healthcare-patient-analytics-dataset","no",""],
   [16,"Lifestyle & stress level prediction dataset","https://www.kaggle.com/datasets/shubhamdecode/lifestyle-and-stress-level-prediction-dataset","no",""],
-  [17,"Student burnout prediction dataset","https://www.kaggle.com/datasets/danieljhuang/student-burnout-prediction-dataset","no",""],
-  [18,"A dataset of your choosing from Kaggle (at least 50 upvotes, related to health economics and policy)","https://www.kaggle.com/datasets","yes",""]
+  [17,"Student burnout prediction dataset","https://www.kaggle.com/datasets/danieljhuang/student-burnout-prediction-dataset","no",""]
 ];
 
 // [code, topic, description]

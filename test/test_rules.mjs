@@ -4,7 +4,10 @@ import { act, view, adminAct, newClass, upgrade, previewRoster } from '../worker
 import { SEED_DATASETS, SEED_TOPICS } from '../worker/src/seed.js';
 
 const PROF = 'prof@gmail.com';
-let S = newClass('Test class', SEED_DATASETS, SEED_TOPICS);
+// The seed catalog has no own-choice dataset; the tests add one (code 18) to exercise that feature.
+const OWN_ROW = [18, 'A dataset of your choosing', 'https://www.kaggle.com/datasets', 'yes', ''];
+const TEST_DATASETS = SEED_DATASETS.concat([OWN_ROW]);
+let S = newClass('Test class', TEST_DATASETS, SEED_TOPICS);
 const logs = [];
 let pass = 0, fail = 0;
 const ok = (cond, label) => { cond ? pass++ : (fail++, console.log('FAIL:', label)); };
@@ -23,6 +26,7 @@ const state = u => view(S, m(u), '', false, Date.now());
 const adm = (action, ...args) => { const copy = structuredClone(S); logs.push(...adminAct(copy, PROF, action, args, Date.now())); S = copy; };
 const grp = name => S.groups.find(g => g.name === name);
 
+ok(SEED_DATASETS.length === 18 && SEED_DATASETS.every(d => d[3] === 'no'), 'seed catalog has 18 datasets and no own choice');
 ok(S.datasets.length === 19 && S.topics.length === 25 && S.datasets[18].own === true && S.datasets[0].reserved !== '', 'seed catalog');
 adm('importRoster', 'Email,Last Name,First Name\n' + 'abcdefgh'.split('').map(c => `${c.toUpperCase()}@x.edu,"L${c}",F${c}`).join('\r\n'));
 ok(S.roster.length === 8 && S.roster[0].email === 'a@x.edu' && S.roster[0].first === 'Fa', 'roster import, emails lowercased');
@@ -196,7 +200,7 @@ ok(S.roster.length === 4 && !grp('Group 1') && !grp('Group 3') && state('d').me.
 // Import with a choice: a preview lists the students not in the file; the ones the instructor keeps stay with their group.
 {
   const saved = S;
-  S = newClass('Keep test', SEED_DATASETS, SEED_TOPICS);
+  S = newClass('Keep test', TEST_DATASETS, SEED_TOPICS);
   adm('importRoster', 'first,last,email\nFa,La,a@x.edu\nFb,Lb,b@x.edu\nFc,Lc,c@x.edu');
   adm('moveStudent', 'b@x.edu', 'new');
   const csv2 = 'first,last,email\nFa,La,A@x.edu\nFd,Ld,d@x.edu';
@@ -254,7 +258,7 @@ throws(() => adm('importRoster', 'Student,SIS Login ID\n"    Points Possible",\n
 // Groups of two; the instructor adds a third member, who claims a second topic of their own.
 {
   const saved = S;
-  S = newClass('Third member test', SEED_DATASETS, SEED_TOPICS);
+  S = newClass('Third member test', TEST_DATASETS, SEED_TOPICS);
   adm('saveSettings', Object.assign({}, S.settings, { maxSize: 2 }));
   adm('importRoster', 'first,last,email\n' + 'pqrstu'.split('').map(c => `F${c},L${c},${c}@x.edu`).join('\n'));
   act1('p', 'createGroup'); act1('q', 'requestJoin', 'Group 1'); act1('p', 'decideRequest', m('q'), true);
