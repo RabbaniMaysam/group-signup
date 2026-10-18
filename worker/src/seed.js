@@ -10,14 +10,12 @@ export const SEED_DATASETS = [
   [5,"Body fat","https://www.kaggle.com/datasets/fedesoriano/body-fat-prediction-dataset","no",""],
   [6,"World happiness report 2021","https://www.kaggle.com/datasets/ajaypalsinghlo/world-happiness-report-2021","no",""],
   [7,"Stroke","https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset","no",""],
-  [8,"Heart attack risk prediction dataset","https://www.kaggle.com/datasets/iamsouravbanerjee/heart-attack-prediction-dataset","no",""],
   [9,"Lung cancer","https://www.kaggle.com/datasets/nancyalaswad90/lung-cancer","no",""],
   [10,"Healthcare fraud detection dataset","https://www.kaggle.com/datasets/nudratabbas/healthcare-fraud-detection-dataset","no",""],
   [11,"Early wake-up, exercise & health outcomes dataset","https://www.kaggle.com/datasets/aliyasaly1231/early-wake-up-exercise-and-health-outcomes-dataset","no",""],
   [12,"Healthy diet & calorie intake nutrition & health","https://www.kaggle.com/datasets/aliyasaly1231/healthy-diet-and-calorie-intake","no",""],
   [13,"Mental health prediction dataset","https://www.kaggle.com/datasets/harpartapsingh13/mental-health-prediction-dataset","no",""],
   [14,"Diabetes prediction dataset","https://www.kaggle.com/datasets/iammustafatz/diabetes-prediction-dataset","no",""],
-  [15,"Healthcare patient analytics dataset","https://www.kaggle.com/datasets/abbas829/healthcare-patient-analytics-dataset","no",""],
   [16,"Lifestyle & stress level prediction dataset","https://www.kaggle.com/datasets/shubhamdecode/lifestyle-and-stress-level-prediction-dataset","no",""],
   [17,"Student burnout prediction dataset","https://www.kaggle.com/datasets/danieljhuang/student-burnout-prediction-dataset","no",""]
 ];

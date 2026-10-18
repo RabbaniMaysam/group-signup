@@ -26,8 +26,8 @@ const state = u => view(S, m(u), '', false, Date.now());
 const adm = (action, ...args) => { const copy = structuredClone(S); logs.push(...adminAct(copy, PROF, action, args, Date.now())); S = copy; };
 const grp = name => S.groups.find(g => g.name === name);
 
-ok(SEED_DATASETS.length === 18 && SEED_DATASETS.every(d => d[3] === 'no'), 'seed catalog has 18 datasets and no own choice');
-ok(S.datasets.length === 19 && S.topics.length === 25 && S.datasets[18].own === true && S.datasets[0].reserved !== '', 'seed catalog');
+ok(SEED_DATASETS.length === 16 && SEED_DATASETS.every(d => d[3] === 'no'), 'seed catalog has 16 datasets and no own choice');
+ok(S.datasets.length === 17 && S.topics.length === 25 && S.datasets.at(-1).own === true && S.datasets[0].reserved !== '', 'seed catalog');
 adm('importRoster', 'Email,Last Name,First Name\n' + 'abcdefgh'.split('').map(c => `${c.toUpperCase()}@x.edu,"L${c}",F${c}`).join('\r\n'));
 ok(S.roster.length === 8 && S.roster[0].email === 'a@x.edu' && S.roster[0].first === 'Fa', 'roster import, emails lowercased');
 
@@ -77,7 +77,7 @@ ok(s.datasets[3].claimedBy[0] === 'Group 2' && s.datasets[4].claimedBy[0] === 'G
 throws(() => act1('c', 'claimDataset', 18, ''), /full web link/, 'own choice needs a link');
 act1('a', 'claimDataset', 18, 'https://www.kaggle.com/datasets/x/y');
 s = act1('c', 'claimDataset', 18, 'https://www.kaggle.com/datasets/z/w');
-ok(s.datasets[18].claimedBy.length === 2 && s.datasets[3].claimedBy.length === 0, 'own choice shared by two groups');
+ok(s.datasets.at(-1).claimedBy.length === 2 && s.datasets[3].claimedBy.length === 0, 'own choice shared by two groups');
 
 // capacity 3: third member fills the group, other requests are closed
 act1('e', 'requestJoin', 'Group 1'); act1('f', 'requestJoin', 'Group 1');
@@ -218,7 +218,7 @@ ok(S.roster.length === 4 && !grp('Group 1') && !grp('Group 3') && state('d').me.
 throws(() => adm('removeTopic', '7'), /claimed by Group 2/, 'claimed topic cannot be removed');
 adm('saveTopic', { code: '30', topic: 'New topic', description: 'x' });
 adm('saveDataset', { code: '1', name: 'Diabetes (renamed)', link: '', own: false, reserved: '' });
-ok(S.topics.length === 26 && S.topics[25].code === '30' && S.datasets[1].name === 'Diabetes (renamed)' && S.datasets.length === 19, 'catalog add and edit');
+ok(S.topics.length === 26 && S.topics[25].code === '30' && S.datasets[1].name === 'Diabetes (renamed)' && S.datasets.length === 17, 'catalog add and edit');
 adm('deleteGroup', 'Group 2');
 ok(S.groups.length === 0 && state('c').me.group === '' && state('e').me.request === '', 'instructor deletes a group');
 ok(!JSON.stringify(logs).includes('undefined') && logs.every(l => l.actor && l.action), 'log lines are complete');
